@@ -1,0 +1,457 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Finance Dashboard</title>
+  <link rel="stylesheet" href="style.css" />
+  <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const { useState, useMemo } = React;
+
+const CATS = ['Food','Rent','Salary','Transport','Entertainment','Health','Shopping','Freelance'];
+
+const CAT_COLOR = {
+  Food:'#f59e0b', Rent:'#ef4444', Salary:'#22c55e', Transport:'#3b82f6',
+  Entertainment:'#8b5cf6', Health:'#06b6d4', Shopping:'#f97316', Freelance:'#10b981'
+};
+
+const SEED = [
+  { id:1,  date:'2026-02-03', amount:32000, category:'Salary',        type:'income'  },
+  { id:2,  date:'2026-02-05', amount:8000,  category:'Rent',          type:'expense' },
+  { id:3,  date:'2026-02-08', amount:1200,  category:'Food',          type:'expense' },
+  { id:4,  date:'2026-02-12', amount:600,   category:'Transport',     type:'expense' },
+  { id:5,  date:'2026-02-15', amount:5000,  category:'Freelance',     type:'income'  },
+  { id:6,  date:'2026-02-18', amount:2000,  category:'Entertainment', type:'expense' },
+  { id:7,  date:'2026-02-22', amount:900,   category:'Health',        type:'expense' },
+  { id:8,  date:'2026-02-25', amount:1500,  category:'Shopping',      type:'expense' },
+  { id:9,  date:'2026-03-03', amount:32000, category:'Salary',        type:'income'  },
+  { id:10, date:'2026-03-05', amount:8000,  category:'Rent',          type:'expense' },
+  { id:11, date:'2026-03-09', amount:950,   category:'Food',          type:'expense' },
+  { id:12, date:'2026-03-13', amount:450,   category:'Transport',     type:'expense' },
+  { id:13, date:'2026-03-17', amount:7000,  category:'Freelance',     type:'income'  },
+  { id:14, date:'2026-03-20', amount:1800,  category:'Entertainment', type:'expense' },
+  { id:15, date:'2026-03-24', amount:2200,  category:'Shopping',      type:'expense' },
+];
+
+function inr(n) {
+  return '\u20B9' + Number(n).toLocaleString('en-IN', { minimumFractionDigits: 0 });
+}
+
+function todayStr() {
+  return new Date().toLocaleDateString('en-IN', { day:'numeric', month:'short', year:'numeric' });
+}
+
+function LineChart({ txns }) {
+  if (!txns.length) return <div className="empty">No data</div>;
+  const sorted = [...txns].sort((a,b) => a.date.localeCompare(b.date));
+  let bal = 0;
+  const pts = sorted.map(t => { bal += t.type === 'income' ? t.amount : -t.amount; return bal; });
+  const W = 560, H = 200, PX = 52, PY = 20;
+  const lo = Math.min(...pts), hi = Math.max(...pts), span = hi - lo || 1;
+  const cx = i => PX + (i / (pts.length - 1 || 1)) * (W - PX - 16);
+  const cy = v => PY + (1 - (v - lo) / span) * (H - PY - 30);
+  const d = pts.map((v,i) => (i===0?'M':'L') + cx(i).toFixed(1) + ',' + cy(v).toFixed(1)).join(' ');
+  const area = d + ' L' + cx(pts.length-1).toFixed(1) + ',' + (H-30) + ' L' + PX + ',' + (H-30) + ' Z';
+  const gridVals = [0, 0.25, 0.5, 0.75, 1].map(r => lo + r * span);
+  return (
+    <div className="chart-wrap">
+      <svg viewBox={'0 0 ' + W + ' ' + H} style={{width:'100%',height:'auto'}}>
+        <defs>
+          <linearGradient id="ag" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor="#3b82f6" stopOpacity="0.25"/>
+            <stop offset="100%" stopColor="#3b82f6" stopOpacity="0"/>
+          </linearGradient>
+        </defs>
+        {gridVals.map((v,i) => (
+          <g key={i}>
+            <line x1={PX} y1={cy(v).toFixed(1)} x2={W-16} y2={cy(v).toFixed(1)} stroke="#1f2d45" strokeWidth="1"/>
+            <text x={PX-6} y={+cy(v).toFixed(1)+4} fontSize="9" fill="#475569" textAnchor="end">{(v/1000).toFixed(0)}k</text>
+          </g>
+        ))}
+        <path d={area} fill="url(#ag)"/>
+        <path d={d} fill="none" stroke="#3b82f6" strokeWidth="2.5" strokeLinejoin="round"/>
+        {pts.map((v,i) => <circle key={i} cx={cx(i)} cy={cy(v)} r="3.5" fill="#3b82f6" stroke="#111827" strokeWidth="2"/>)}
+        {[0, Math.floor(pts.length/2), pts.length-1].map(i => (
+          <text key={i} x={cx(i)} y={H-10} fontSize="9" fill="#475569" textAnchor="middle">{sorted[i].date.slice(5)}</text>
+        ))}
+      </svg>
+    </div>
+  );
+}
+
+function DonutChart({ txns }) {
+  const exp = txns.filter(t => t.type === 'expense');
+  if (!exp.length) return <div className="empty">No expense data</div>;
+  const totals = {};
+  exp.forEach(t => { totals[t.category] = (totals[t.category] || 0) + t.amount; });
+  const entries = Object.entries(totals).sort((a,b) => b[1]-a[1]).slice(0,6);
+  const total = entries.reduce((s,[,v]) => s+v, 0);
+  const R = 58, cx = 78, cy = 78, sw = 22, circ = 2 * Math.PI * R;
+  let off = 0;
+  const slices = entries.map(([cat,val]) => {
+    const dash = (val/total) * circ;
+    const s = { cat, val, dash, off };
+    off += dash;
+    return s;
+  });
+  return (
+    <div style={{display:'flex',alignItems:'center',gap:20,flexWrap:'wrap'}}>
+      <svg viewBox="0 0 156 156" style={{width:130,height:130,flexShrink:0}}>
+        <circle cx={cx} cy={cy} r={R} fill="none" stroke="#1f2d45" strokeWidth={sw}/>
+        {slices.map(s => (
+          <circle key={s.cat} cx={cx} cy={cy} r={R} fill="none"
+            stroke={CAT_COLOR[s.cat] || '#64748b'}
+            strokeWidth={sw}
+            strokeDasharray={s.dash + ' ' + (circ - s.dash)}
+            strokeDashoffset={circ/4 - s.off}
+          />
+        ))}
+        <text x={cx} y={cy-5} textAnchor="middle" fontSize="10" fill="#94a3b8">Total</text>
+        <text x={cx} y={cy+10} textAnchor="middle" fontSize="12" fontWeight="700" fill="#f1f5f9">{(total/1000).toFixed(0)}k</text>
+      </svg>
+      <div style={{flex:1,minWidth:110}}>
+        {slices.map(s => (
+          <div key={s.cat} style={{display:'flex',alignItems:'center',gap:7,marginBottom:6}}>
+            <div style={{width:7,height:7,borderRadius:'50%',background:CAT_COLOR[s.cat]||'#64748b',flexShrink:0}}/>
+            <span style={{fontSize:'0.76rem',color:'#94a3b8',flex:1}}>{s.cat}</span>
+            <span style={{fontSize:'0.76rem',fontWeight:600,color:'#e2e8f0'}}>{((s.val/total)*100).toFixed(0)}%</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function BarChart({ txns }) {
+  const months = {};
+  txns.forEach(t => {
+    const m = t.date.slice(0,7);
+    if (!months[m]) months[m] = { income:0, expense:0 };
+    months[m][t.type] += t.amount;
+  });
+  const entries = Object.entries(months).sort((a,b) => a[0].localeCompare(b[0]));
+  if (!entries.length) return <div className="empty">No data</div>;
+  const peak = Math.max(...entries.flatMap(([,v]) => [v.income, v.expense]));
+  const W = 400, H = 140, P = 30, bw = 26, gap = (W - P*2) / entries.length;
+  return (
+    <div className="chart-wrap">
+      <svg viewBox={'0 0 ' + W + ' ' + H} style={{width:'100%',height:'auto'}}>
+        <rect x={P} y={10} width={10} height={10} rx="2" fill="rgba(34,197,94,0.7)"/>
+        <text x={P+14} y={19} fontSize="9" fill="#64748b">Income</text>
+        <rect x={P+62} y={10} width={10} height={10} rx="2" fill="rgba(239,68,68,0.7)"/>
+        <text x={P+76} y={19} fontSize="9" fill="#64748b">Expense</text>
+        {entries.map(([m,v],i) => {
+          const x = P + i*gap + gap/2;
+          const ih = (v.income/peak) * (H-P*2-10);
+          const eh = (v.expense/peak) * (H-P*2-10);
+          return (
+            <g key={m}>
+              <rect x={x-bw-2} y={H-P-ih} width={bw} height={ih} rx="4" fill="rgba(34,197,94,0.7)"/>
+              <rect x={x+2}    y={H-P-eh} width={bw} height={eh} rx="4" fill="rgba(239,68,68,0.7)"/>
+              <text x={x} y={H-8} fontSize="9" fill="#475569" textAnchor="middle">{m.slice(5)}</text>
+            </g>
+          );
+        })}
+        <line x1={P} y1={H-P} x2={W-P} y2={H-P} stroke="#1f2d45" strokeWidth="1"/>
+      </svg>
+    </div>
+  );
+}
+
+function TxnForm({ initial, onSave, onCancel }) {
+  const blank = { date:'', amount:'', category:'Food', type:'expense' };
+  const [form, setForm] = useState(initial || blank);
+  const [err, setErr] = useState('');
+  const set = k => e => setForm(f => Object.assign({}, f, { [k]: e.target.value }));
+  function submit() {
+    if (!form.date || !form.amount) return setErr('All fields are required.');
+    if (isNaN(form.amount) || Number(form.amount) <= 0) return setErr('Enter a valid amount.');
+    setErr('');
+    onSave(Object.assign({}, form, { amount: Number(form.amount) }));
+  }
+  return (
+    <div className="form-wrap">
+      <div className="form-title">{initial ? 'Edit Transaction' : 'New Transaction'}</div>
+      <div className="form-grid">
+        <input type="date" value={form.date} onChange={set('date')}/>
+        <input type="number" placeholder="Amount (₹)" value={form.amount} onChange={set('amount')} min="1"/>
+        <select value={form.category} onChange={set('category')}>
+          {CATS.map(c => <option key={c}>{c}</option>)}
+        </select>
+        <select value={form.type} onChange={set('type')}>
+          <option value="income">Income</option>
+          <option value="expense">Expense</option>
+        </select>
+      </div>
+      {err && <div className="err">{err}</div>}
+      <div className="row">
+        <button className="btn btn-p" onClick={submit}>{initial ? 'Save' : 'Add'}</button>
+        {onCancel && <button className="btn btn-g" onClick={onCancel}>Cancel</button>}
+      </div>
+    </div>
+  );
+}
+
+function Overview({ txns }) {
+  const income   = txns.filter(t => t.type==='income').reduce((s,t) => s+t.amount, 0);
+  const expenses = txns.filter(t => t.type==='expense').reduce((s,t) => s+t.amount, 0);
+  const balance  = income - expenses;
+  const savings  = income > 0 ? ((balance/income)*100).toFixed(1) : 0;
+  return (
+    <div>
+      <div className="kpi-row">
+        <div className="kpi b">
+          <div className="kpi-head"><span className="kpi-tag">Net Balance</span><div className="kpi-ico">💰</div></div>
+          <div className="kpi-val">{inr(balance)}</div>
+          <div className="kpi-note">Income minus expenses</div>
+        </div>
+        <div className="kpi g">
+          <div className="kpi-head"><span className="kpi-tag">Total Income</span><div className="kpi-ico">📈</div></div>
+          <div className="kpi-val">{inr(income)}</div>
+          <div className="kpi-note">{txns.filter(t=>t.type==='income').length} transactions</div>
+        </div>
+        <div className="kpi r">
+          <div className="kpi-head"><span className="kpi-tag">Total Expenses</span><div className="kpi-ico">📉</div></div>
+          <div className="kpi-val">{inr(expenses)}</div>
+          <div className="kpi-note">{txns.filter(t=>t.type==='expense').length} transactions</div>
+        </div>
+        <div className="kpi p">
+          <div className="kpi-head"><span className="kpi-tag">Savings Rate</span><div className="kpi-ico">🏦</div></div>
+          <div className="kpi-val">{savings}%</div>
+          <div className="kpi-note">Of total income saved</div>
+        </div>
+      </div>
+      <div className="charts-row">
+        <div className="panel">
+          <div className="panel-head"><h3>Balance Trend</h3><p>Cumulative balance over time</p></div>
+          <div className="panel-body"><LineChart txns={txns}/></div>
+        </div>
+        <div className="panel">
+          <div className="panel-head"><h3>Spending Breakdown</h3><p>By category</p></div>
+          <div className="panel-body"><DonutChart txns={txns}/></div>
+        </div>
+      </div>
+      <div className="panel">
+        <div className="panel-head"><h3>Monthly Comparison</h3><p>Income vs Expenses per month</p></div>
+        <div className="panel-body"><BarChart txns={txns}/></div>
+      </div>
+    </div>
+  );
+}
+
+function Insights({ txns }) {
+  const catMap = {};
+  txns.filter(t => t.type==='expense').forEach(t => { catMap[t.category]=(catMap[t.category]||0)+t.amount; });
+  const ranked = Object.entries(catMap).sort((a,b) => b[1]-a[1]);
+  const top = ranked[0];
+  const now = new Date();
+  const thisM = now.getFullYear()+'-'+String(now.getMonth()+1).padStart(2,'0');
+  const prevD = new Date(now.getFullYear(), now.getMonth()-1, 1);
+  const lastM = prevD.getFullYear()+'-'+String(prevD.getMonth()+1).padStart(2,'0');
+  const thisExp = txns.filter(t=>t.type==='expense'&&t.date.startsWith(thisM)).reduce((s,t)=>s+t.amount,0);
+  const lastExp = txns.filter(t=>t.type==='expense'&&t.date.startsWith(lastM)).reduce((s,t)=>s+t.amount,0);
+  const biggest = [...txns].sort((a,b)=>b.amount-a.amount)[0];
+  const income   = txns.filter(t=>t.type==='income').reduce((s,t)=>s+t.amount,0);
+  const expenses = txns.filter(t=>t.type==='expense').reduce((s,t)=>s+t.amount,0);
+  const ratio = income > 0 ? ((expenses/income)*100).toFixed(1) : 'N/A';
+  const diff  = lastExp > 0 ? ((thisExp-lastExp)/lastExp*100).toFixed(1) : null;
+
+  const items = [
+    { color:'#f59e0b', label:'Top Spending Category',   val: top ? top[0]+' — '+inr(top[1]) : 'No data' },
+    { color:'#3b82f6', label:'Month-over-Month',         val: diff !== null ? inr(thisExp)+' vs '+inr(lastExp)+' ('+( diff>0?'+':'')+diff+'%)' : 'Not enough data' },
+    { color:'#ef4444', label:'Largest Transaction',      val: biggest ? inr(biggest.amount)+' · '+biggest.category+' · '+biggest.date : '—' },
+    { color:'#22c55e', label:'Expense-to-Income Ratio',  val: ratio+'% of income spent' },
+    { color:'#8b5cf6', label:'Most Active Category',     val: ranked.length ? ranked[0][0]+' ('+txns.filter(t=>t.category===ranked[0][0]).length+' entries)' : '—' },
+  ];
+
+  return (
+    <div className="two-col">
+      <div className="panel">
+        <div className="panel-head"><h3>Key Insights</h3></div>
+        <div className="panel-body">
+          {items.map((item,i) => (
+            <div key={i} className="insight-row">
+              <div className="dot" style={{background:item.color}}/>
+              <div>
+                <span>{item.label}</span>
+                <strong>{item.val}</strong>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+      <div className="panel">
+        <div className="panel-head"><h3>Spending Breakdown</h3><p>By category</p></div>
+        <div className="panel-body"><DonutChart txns={txns}/></div>
+      </div>
+    </div>
+  );
+}
+
+function Transactions({ txns, role, onAdd, onEdit }) {
+  const [search, setSearch] = useState('');
+  const [filter, setFilter] = useState('all');
+  const [sort,   setSort]   = useState('date-desc');
+  const [form,   setForm]   = useState(false);
+  const [editId, setEditId] = useState(null);
+
+  const rows = useMemo(() => {
+    let list = txns.filter(t => {
+      const q = search.toLowerCase();
+      return (!q || t.category.toLowerCase().includes(q) || String(t.amount).includes(q))
+          && (filter === 'all' || t.type === filter);
+    });
+    const [col, dir] = sort.split('-');
+    list.sort((a,b) => {
+      const x = col==='date' ? a.date : a.amount;
+      const y = col==='date' ? b.date : b.amount;
+      return dir==='asc' ? (x>y?1:-1) : (x<y?1:-1);
+    });
+    return list;
+  }, [txns, search, filter, sort]);
+
+  function arrow(c) { return sort===c+'-asc' ? ' ↑' : sort===c+'-desc' ? ' ↓' : ''; }
+  function flip(c)  { setSort(s => s===c+'-desc' ? c+'-asc' : c+'-desc'); }
+
+  return (
+    <div className="panel">
+      {role==='admin' && !editId && (
+        form
+          ? <TxnForm onSave={t=>{onAdd(t);setForm(false);}} onCancel={()=>setForm(false)}/>
+          : <div className="add-row"><button className="btn btn-p" onClick={()=>setForm(true)}>+ Add Transaction</button></div>
+      )}
+      {role==='admin' && editId && (
+        <TxnForm
+          initial={txns.find(t=>t.id===editId)}
+          onSave={t=>{onEdit(editId,t);setEditId(null);}}
+          onCancel={()=>setEditId(null)}
+        />
+      )}
+      <div className="filters">
+        <input placeholder="Search category or amount…" value={search} onChange={e=>setSearch(e.target.value)}/>
+        <select value={filter} onChange={e=>setFilter(e.target.value)}>
+          <option value="all">All Types</option>
+          <option value="income">Income</option>
+          <option value="expense">Expense</option>
+        </select>
+        <select value={sort} onChange={e=>setSort(e.target.value)}>
+          <option value="date-desc">Newest First</option>
+          <option value="date-asc">Oldest First</option>
+          <option value="amount-desc">Highest Amount</option>
+          <option value="amount-asc">Lowest Amount</option>
+        </select>
+      </div>
+      <div className="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th onClick={()=>flip('date')}>Date{arrow('date')}</th>
+              <th>Category</th>
+              <th onClick={()=>flip('amount')}>Amount{arrow('amount')}</th>
+              <th>Type</th>
+              {role==='admin' && <th>Action</th>}
+            </tr>
+          </thead>
+          <tbody>
+            {rows.length === 0
+              ? <tr><td colSpan={role==='admin'?5:4} className="empty">No transactions found.</td></tr>
+              : rows.map(t => (
+                <tr key={t.id}>
+                  <td style={{color:'#94a3b8'}}>{t.date}</td>
+                  <td>
+                    <span className="cat-tag" style={{color:CAT_COLOR[t.category],borderColor:CAT_COLOR[t.category]+'33'}}>
+                      {t.category}
+                    </span>
+                  </td>
+                  <td style={{fontWeight:700,color:t.type==='income'?'#4ade80':'#f87171'}}>
+                    {t.type==='income'?'+':'-'}{inr(t.amount)}
+                  </td>
+                  <td><span className={'badge '+t.type}>{t.type==='income'?'↑ Income':'↓ Expense'}</span></td>
+                  {role==='admin' && (
+                    <td><button className="edit-btn" onClick={()=>{setEditId(t.id);setForm(false);}}>Edit</button></td>
+                  )}
+                </tr>
+              ))
+            }
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+function App() {
+  const [txns, setTxns] = useState(SEED);
+  const [role, setRole] = useState('viewer');
+  const [page, setPage] = useState('Overview');
+
+  const pages = [
+    { name:'Overview',     icon:'📊' },
+    { name:'Transactions', icon:'🧾' },
+    { name:'Insights',     icon:'💡' },
+  ];
+
+  const subtitles = {
+    Overview:     'Your financial summary at a glance',
+    Transactions: 'All recorded transactions',
+    Insights:     'Spending patterns and observations',
+  };
+
+  function addTxn(t)      { setTxns(p => [...p, Object.assign({}, t, { id: Date.now() })]); }
+  function editTxn(id, t) { setTxns(p => p.map(x => x.id===id ? Object.assign({}, t, { id }) : x)); }
+
+  return (
+    <div style={{display:'flex',minHeight:'100vh'}}>
+      <div className="sidebar">
+        <div className="logo">
+          <div className="logo-name">FinanceIQ</div>
+          <small className="logo-sub">Personal Finance Tracker</small>
+        </div>
+        <div className="nav-label">Menu</div>
+        {pages.map(p => (
+          <button key={p.name} className={'nav-btn'+(page===p.name?' on':'')} onClick={()=>setPage(p.name)}>
+            <span>{p.icon}</span>{p.name}
+          </button>
+        ))}
+        <div className="sidebar-footer">
+          <div className="role-box">
+            <div className="role-box-label">Access Level</div>
+            <div className="role-pair">
+              <button className={'role-btn'+(role==='viewer'?' viewer':'')} onClick={()=>setRole('viewer')}>Viewer</button>
+              <button className={'role-btn'+(role==='admin'?' admin':'')}  onClick={()=>setRole('admin')}>Admin</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div className="main">
+        <div className="topbar">
+          <div className="topbar-left">
+            <h2>{page}</h2>
+            <p>{subtitles[page]}</p>
+          </div>
+          <div className="topbar-right">
+            <span className="chip">{todayStr()}</span>
+            {role==='admin' && <span className="admin-pill">Admin Mode</span>}
+          </div>
+        </div>
+        <div className="page">
+          {page==='Overview'     && <Overview txns={txns}/>}
+          {page==='Transactions' && <Transactions txns={txns} role={role} onAdd={addTxn} onEdit={editTxn}/>}
+          {page==='Insights'     && <Insights txns={txns}/>}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App/>);
+</script>
+</body>
+</html>
